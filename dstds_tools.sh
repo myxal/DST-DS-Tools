@@ -7,13 +7,16 @@ _STEAMPATH="$(which steamcmd)"
 _STEAMUPDARGS="validate"
 _DSROOT="/home/dontstarve/DST"
 _DSBIN="dontstarve_dedicated_server_nullrenderer"
-#_DSARGS="-console" # this arg is deprecated, console is configure in cluster.ini
+#_DSARGS="-console" # this arg is deprecated, console is configured in cluster.ini
 _DSARGS=
 unset _PSR
 unset _CONFDIR
 unset _CLUSTER
+unset _SHARDS
+_SHARDS=()
+unset _MASTERSHARD
 
-set -x
+# set -x
 set -e
 export _top_pid=$$
 trap "exit 1" TERM
@@ -29,6 +32,22 @@ function parse_cluster_directory {
 		echo "WARN: Confdir ($_CONFDIR) must not contain slashes! Changing to (.)" >&2
 		_CONFDIR="."
 	fi
+}
+
+function collect_shards {
+# $1 = path to cluster
+	local _shard
+	while IFS= read -r -d '' _shard; do
+		echo "Found shard: $_shard"
+		_SHARDS+=( "$_shard" )
+	done < <(find "$1" -type f -name server.ini -printf "%h\0" | xargs -0 basename -az)
+	[ ${#_SHARDS[@]} -gt 0 ] || { \
+		echo "ERROR: No shards found." >&2; kill -s TERM $_top_pid; }
+	_MASTERSHARD="$(find "$1" -type f -name server.ini -exec grep -qE "^[[:space:]]*is_master[[:space:]]*\=[[:space:]]*true[[:space:]]*" {} \; -printf %h)"
+	_MASTERSHARD="${_MASTERSHARD##*/}"
+	echo "Detected master shard: $_MASTERSHARD"
+	[ -n "$_MASTERSHARD" ] || { \
+		echo "ERROR: Master shard not found!" >&2 ; kill -s TERM $_top_pid; }
 }
 
 function create_cluster {
@@ -49,7 +68,7 @@ function start_cluster {
 	parse_cluster_directory "$1"
 	local _cluster_canonical="$(readlink -m "$1")"
 	screen -S "$_CLUSTER" -Q select . && {\
-		echo "ERROR: screen session already exists, cluster is already running." >&2 ; kill -s TERM  $_top_pid; }
+		echo "ERROR: screen session already exists, cluster is already running." >&2 ; kill -s TERM $_top_pid; }
 	# check if we should be using shards
 	local _use_shard=$(sed -ne '/^shard_enabled/ s/.*= *//p' "$_cluster_canonical"/cluster.ini)
 	shopt -s nocasematch
@@ -58,16 +77,22 @@ function start_cluster {
 		_use_shard="true"
 	# When shards are used, unset the variable (to enable substituion). Otherwise, set to null value, which will be use in master shard's command line
 	[[ $_use_shard =~ "false" ]] && _use_shard="" ||  unset _use_shard
-
+  collect_shards "$1"
+	echo "Starting master shard: $_MASTERSHARD"
 	(
 		cd "${_DSROOT}/bin"
-		screen -dm -S "$_CLUSTER" -p + -t Master ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir $_CONFDIR -cluster $_CLUSTER ${_use_shard--shard Master}
+		screen -dm -S "$_CLUSTER" -p + -t "$_MASTERSHARD" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir $_CONFDIR -cluster $_CLUSTER "${_use_shard--shard $_MASTERSHARD}"
 		sleep 4
-#		[ -d "$_cluster_canonical/Caves" ] && \
-		[ -z ${_use_shard+x} ] && \
-			screen -S "$_CLUSTER" -X screen -t Caves ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir $_CONFDIR -cluster $_CLUSTER -shard Caves
 	)
-
+	for ((i=0;i<${#_SHARDS[@]};i++)); do
+		local _shard=${_SHARDS[$i]}
+		if [[ "$_shard" != "$_MASTERSHARD" ]]; then
+			echo "Starting slave: $_shard"
+			(
+				screen -S "$_CLUSTER" -X screen -t "$_shard" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir $_CONFDIR -cluster $_CLUSTER -shard "$_shard"
+			)
+		fi
+	done
 }
 
 function stop_cluster {
@@ -78,23 +103,35 @@ function stop_cluster {
 	screen -S $1 -Q select . || {\
 		echo "ERROR: screen session with specified name not found." >&2 ; kill -s TERM $_top_pid; }
 	# Get list of windows in the session and parse it
-	local _swindows=( $(screen -S $1 -Q windows) )
+	local _swindows=()
+	while IFS= read -r -d '' _window; do
+		echo "Found screen window: $_window"
+		_swindows+=("$_window")
+	done < <( ( screen -S "$1" -Q windows; echo -ne "\0" ) | sed 's/  /\x0/g'  | sed -z "s/^[[:digit:]]\+ //")
 	local _skip="yes"
 	local _timeout=${3:-"90"}
-	for WINDOW in ${_swindows[@]}; do
-		[[ "$_skip" == "yes" ]] && { _skip="no"; continue; }
-		(
-			[[ "$WINDOW" == "Master" ]] && \
-				screen -S $1 -p $WINDOW -X stuff $'c_announce("'"${2:-"Server is shutting down in $_timeout seconds."}"'",nil,"leave_game")\r'
+	for ((i=0;i<${#_swindows[@]};i++)); do
+		local WINDOW="${_swindows[$i]}"
+		if [[ $i == 0 ]]; then
+			# First window is always the master shard. For now, just announce the server is going down.
+			echo "Announcing shutdown..."
+			screen -S $1 -p "$WINDOW" -X stuff $'c_announce("'"${2:-"Server is shutting down in $_timeout seconds."}"'",nil,"leave_game")\r'
 			sleep $_timeout
-			# Ctrl+C (SIGINT)
-			screen -S $1 -p $WINDOW -X stuff $'\cc'
-			# c_shutdown() results in duplicated snapshots
-			# screen -S $1 -p $WINDOW -X stuff $'c_shutdown()\r'
-		) & sleep 4
-		_skip="yes"
+		else
+			# Other windows are all slaves - we've already waited, it's time to shut down slaves
+			echo "Shutting down slave: $WINDOW"
+			(
+				# Ctrl+C (SIGINT)
+				screen -S $1 -p "$WINDOW" -X stuff $'\cc'
+				# c_shutdown() results in duplicated snapshots
+				# screen -S $1 -p $WINDOW -X stuff $'c_shutdown()\r'
+			) & sleep 2
+		fi
 	done
 	wait
+	# Finally, shut down master shard
+	echo "Shutting down master: ${_swindows[0]}"
+	screen -S $1 -p "${_swindows[0]}" -X stuff $'\cc'
 }
 
 function usage {
