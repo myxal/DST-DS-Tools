@@ -1,14 +1,23 @@
 #!/bin/bash
-
 _scriptname="dstds-tools.sh"
 
+# Are we running with a non-GNU readlink? Use homebrew's gnu version explicitly:
+g=""
+${g}readlink -m / || g=g
+# See if the GNU version is installed
+${g}readlink -m / || {
+	echo "FATAL: (g)readlink -m doesn't work on your system. Provide a GNU environment for this script and try again." >&2
+	exit 1
+}
+
+# Manually set steamcmd path here only if it's not in the PATH. It's o
 #_STEAMPATH="/home/steam/steamcmd/steamcmd.sh"
-_STEAMPATH="$(which steamcmd)"
+
 _STEAMUPDARGS="validate"
 _DSROOT="/home/dontstarve/DST"
 _DSBIN="dontstarve_dedicated_server_nullrenderer"
 #_DSARGS="-console" # this arg is deprecated, console is configured in cluster.ini
-_DSARGS=
+_DSARGS="-skip_update_server_mods -tick_rate 20"
 unset _PSR
 unset _CONFDIR
 unset _CLUSTER
@@ -23,11 +32,11 @@ trap "exit 1" TERM
 
 function parse_cluster_directory {
 # $1 = path to cluster
-	local _cluster_canonical="$(readlink -m "$1")"
+	local _cluster_canonical="$(${g}readlink -m "$1")"
 	_CLUSTER="$(basename "$_cluster_canonical")"
-	_cluster_canonical="$(readlink -m ${_cluster_canonical}/..)"
+	_cluster_canonical="$(${g}readlink -m ${_cluster_canonical}/..)"
 	_CONFDIR="$(basename "$_cluster_canonical")"
-	_PSR="$(readlink -m ${_cluster_canonical}/..)"
+	_PSR="$(${g}readlink -m ${_cluster_canonical}/..)"
 	if [[ "$_CONFDIR" == "/" ]]; then
 		echo "WARN: Confdir ($_CONFDIR) must not contain slashes! Changing to (.)" >&2
 		_CONFDIR="."
@@ -66,22 +75,15 @@ function start_cluster {
 # $1 = path to cluster
 	# cluster named by its directory name
 	parse_cluster_directory "$1"
-	local _cluster_canonical="$(readlink -m "$1")"
+	local _cluster_canonical="$(${g}readlink -m "$1")"
 	screen -S "$_CLUSTER" -Q select . && {\
 		echo "ERROR: screen session already exists, cluster is already running." >&2 ; kill -s TERM $_top_pid; }
 	# check if we should be using shards
-	local _use_shard=$(sed -ne '/^shard_enabled/ s/.*= *//p' "$_cluster_canonical"/cluster.ini)
-	shopt -s nocasematch
-	# If there's no setting or it's garbage, set default here
-	[[ "$_use_shard" =~ "true" ]] || [[ "$_use_shard" =~ "false" ]] || \
-		_use_shard="true"
-	# When shards are used, unset the variable (to enable substituion). Otherwise, set to null value, which will be use in master shard's command line
-	[[ $_use_shard =~ "false" ]] && _use_shard="" ||  unset _use_shard
-  collect_shards "$1"
+	collect_shards "$1"
 	echo "Starting master shard: $_MASTERSHARD"
 	(
 		cd "${_DSROOT}/bin"
-		screen -dm -S "$_CLUSTER" -p + -t "$_MASTERSHARD" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir $_CONFDIR -cluster $_CLUSTER "${_use_shard--shard $_MASTERSHARD}"
+		screen -dm -S "$_CLUSTER" -p + -t "$_MASTERSHARD" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir $_CONFDIR -cluster $_CLUSTER -shard "$_MASTERSHARD"
 		sleep 4
 	)
 	for ((i=0;i<${#_SHARDS[@]};i++)); do
@@ -89,7 +91,7 @@ function start_cluster {
 		if [[ "$_shard" != "$_MASTERSHARD" ]]; then
 			echo "Starting slave: $_shard"
 			(
-				screen -S "$_CLUSTER" -X screen -t "$_shard" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir $_CONFDIR -cluster $_CLUSTER -shard "$_shard"
+			screen -S "$_CLUSTER" -X screen -t "$_shard" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir $_CONFDIR -cluster $_CLUSTER -shard "$_shard"
 			)
 		fi
 	done
