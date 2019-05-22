@@ -3,9 +3,9 @@ _scriptname="dstds-tools.sh"
 
 # Are we running with a non-GNU readlink? Use homebrew's gnu version explicitly:
 g=""
-${g}readlink -m / || g=g
+${g}readlink -m / > /dev/null 2>&1 || g=g
 # See if the GNU version is installed
-${g}readlink -m / || {
+${g}readlink -m / > /dev/null 2>&1 || {
 	echo "FATAL: (g)readlink -m doesn't work on your system. Provide a GNU environment for this script and try again." >&2
 	exit 1
 }
