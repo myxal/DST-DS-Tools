@@ -34,7 +34,7 @@ function parse_cluster_directory {
 # $1 = path to cluster
 	local _cluster_canonical="$(${g}readlink -m "$1")"
 	_CLUSTER="$(basename "$_cluster_canonical")"
-	_cluster_canonical="$(${g}readlink -m ${_cluster_canonical}/..)"
+	_cluster_canonical="$(${g}readlink -m "${_cluster_canonical}/..")"
 	_CONFDIR="$(basename "$_cluster_canonical")"
 	_PSR="$(${g}readlink -m ${_cluster_canonical}/..)"
 	if [[ "$_CONFDIR" == "/" ]]; then
@@ -83,7 +83,7 @@ function start_cluster {
 	echo "Starting master shard: $_MASTERSHARD"
 	(
 		cd "${_DSROOT}/bin"
-		screen -dm -S "$_CLUSTER" -p + -t "$_MASTERSHARD" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir $_CONFDIR -cluster $_CLUSTER -shard "$_MASTERSHARD"
+		screen -dm -S "$_CLUSTER" -p + -t "$_MASTERSHARD" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir "$_CONFDIR" -cluster "$_CLUSTER" -shard "$_MASTERSHARD"
 		sleep 4
 	)
 	for ((i=0;i<${#_SHARDS[@]};i++)); do
@@ -91,7 +91,7 @@ function start_cluster {
 		if [[ "$_shard" != "$_MASTERSHARD" ]]; then
 			echo "Starting slave: $_shard"
 			(
-			screen -S "$_CLUSTER" -X screen -t "$_shard" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir $_CONFDIR -cluster $_CLUSTER -shard "$_shard"
+			screen -S "$_CLUSTER" -X screen -t "$_shard" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir "$_CONFDIR" -cluster "$_CLUSTER" -shard "$_shard"
 			)
 		fi
 	done
@@ -102,7 +102,7 @@ function stop_cluster {
 # $2 = announce message (optional)
 # $3 = timeout (optional)
 	# Stop if screen with such name isn't found
-	screen -S $1 -Q select . || {\
+	screen -S "$1" -Q select . || {\
 		echo "ERROR: screen session with specified name not found." >&2 ; kill -s TERM $_top_pid; }
 	# Get list of windows in the session and parse it
 	local _swindows=()
@@ -117,14 +117,14 @@ function stop_cluster {
 		if [[ $i == 0 ]]; then
 			# First window is always the master shard. For now, just announce the server is going down.
 			echo "Announcing shutdown..."
-			screen -S $1 -p "$WINDOW" -X stuff $'c_announce("'"${2:-"Server is shutting down in $_timeout seconds."}"'",nil,"leave_game")\r'
+			screen -S "$1" -p "$WINDOW" -X stuff $'c_announce("'"${2:-"Server is shutting down in $_timeout seconds."}"'",nil,"leave_game")\r'
 			sleep $_timeout
 		else
 			# Other windows are all slaves - we've already waited, it's time to shut down slaves
 			echo "Shutting down slave: $WINDOW"
 			(
 				# Ctrl+C (SIGINT)
-				screen -S $1 -p "$WINDOW" -X stuff $'\cc'
+				screen -S "$1" -p "$WINDOW" -X stuff $'\cc'
 				# c_shutdown() results in duplicated snapshots
 				# screen -S $1 -p $WINDOW -X stuff $'c_shutdown()\r'
 			) & sleep 2
@@ -133,7 +133,7 @@ function stop_cluster {
 	wait
 	# Finally, shut down master shard
 	echo "Shutting down master: ${_swindows[0]}"
-	screen -S $1 -p "${_swindows[0]}" -X stuff $'\cc'
+	screen -S "$1" -p "${_swindows[0]}" -X stuff $'\cc'
 }
 
 function usage {
