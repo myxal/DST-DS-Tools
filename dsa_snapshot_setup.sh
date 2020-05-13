@@ -5,7 +5,7 @@ set -e
 [ "$1" == "uninstall" ] && {
   echo "Uninstalling DSA Snapshotter"
   launchctl unload $_plist_path
-  rm $_script_path $_plist_path
+  rm -i $_script_path $_plist_path
   exit
 }
 set -e
@@ -28,14 +28,16 @@ _pbcommands=(
 )
 for I in ${!_data_folders[@]}; do
   echo "Found DS data folder: ${_data_folders[$I]}"
-  _pbcommands+=("Add :WatchPaths:$I string \"${_data_folders[$I]}\"")
+  _pbcommands+=(
+  "Add :WatchPaths:$I string \"${_data_folders[$I]}\""
+  )
 done
 for I in ${!_pbcommands[@]}; do
   PlistBuddy -x -c "${_pbcommands[$I]}" $_plist_path >/dev/null
 done
 echo "Agent file created."
-_payload_start=`awk '/^__PAYLOAD_BELOW__/ {print NR + 1; exit 0; }' $0`
-tail -n+$_payload_start $0 > $_script_path
+_payload_start=$(awk '/^__PAYLOAD_BELOW__/ {print NR + 1; exit 0; }' "$0")
+tail -n+$_payload_start "$0" > $_script_path
 chmod a+x $_script_path
 launchctl load $_plist_path
 echo "Agent loaded."
