@@ -72,7 +72,7 @@ shopt -s extglob
 pgrep -xq dontstarve_steam && {
   for _i in ${!_data_folders[@]}; do
     cd "${_data_folders[$_i]}"
-    _new_sums=$(md5 remote/*+(_[12345])?(_hamlet_beta_backup))
+    _new_sums=$(md5 remote/*+(_+([0-9]))?(_hamlet_beta_backup))
     # enable RE globbing
     # if the sums file doesn't exist, make a new snapshot without checking
     [ ! -f "$_sums_filename" ] && {
@@ -84,4 +84,6 @@ pgrep -xq dontstarve_steam && {
       make_new_snapshot
     }
   done
+} || {
+  echo "ERROR: dontstarve_steam not running" >&2
 }
