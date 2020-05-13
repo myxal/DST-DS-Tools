@@ -32,6 +32,13 @@ for I in ${!_data_folders[@]}; do
   "Add :WatchPaths:$I string \"${_data_folders[$I]}\""
   )
 done
+[ "$1" == "debug" ] && {
+  _pbcommands+=(
+  'Add :StandardOutPath string /tmp/dsa_snapshot.out'
+  'Add :StandardErrorPath string /tmp/dsa_snapshot.err'
+  'Add :Debug bool true'
+  )
+}
 for I in ${!_pbcommands[@]}; do
   PlistBuddy -x -c "${_pbcommands[$I]}" $_plist_path >/dev/null
 done
