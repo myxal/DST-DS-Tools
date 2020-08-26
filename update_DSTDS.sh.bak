@@ -6,6 +6,6 @@ echo "Using installdir: " ${_DSROOT:="~/DST"}
   [ -z "$BETAPW" ] && { echo ". No beta password provided." ; }
 }
 #screen -dr dst_server1 -X quit
-steamcmd +@ShutdownOnFailedCommand 1 +@NoPromptForPassword 1 +login anonymous +force_install_dir $_DSROOT +app_update 343050 ${BETA+'-'beta $BETA} ${BETAPW+'-'betapassword $BETAPW} +quit
+# steamcmd +@ShutdownOnFailedCommand 1 +@NoPromptForPassword 1 +login anonymous +force_install_dir $_DSROOT +app_update 343050 ${BETA+'-'beta $BETA} ${BETAPW+'-'betapassword $BETAPW} +quit
 #sleep 10
-( cd ${_DSROOT}/bin ; ./dontstarve_dedicated_server_nullrenderer -only_update_server_mods )
+( cd "${_DSROOT}/bin" || cd "${_DSROOT}/dontstarve_dedicated_server_nullrenderer.app/Contents/MacOS" || cd "${_DSROOT}/Contents/MacOS" ; ./dontstarve_dedicated_server_nullrenderer -only_update_server_mods )

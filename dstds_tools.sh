@@ -14,6 +14,7 @@ ${g}readlink -m / > /dev/null 2>&1 || {
 #_STEAMPATH="/home/steam/steamcmd/steamcmd.sh"
 
 _STEAMUPDARGS="validate"
+# On MacOS, provide path to the folder containing the app bundle
 _DSROOT=${_DSROOT:="/home/dontstarve/DST"}
 _DSBIN="dontstarve_dedicated_server_nullrenderer"
 #_DSARGS="-console" # this arg is deprecated, console is configured in cluster.ini
@@ -36,7 +37,7 @@ function parse_cluster_directory {
 	_CLUSTER="$(basename "$_cluster_canonical")"
 	_cluster_canonical="$(${g}readlink -m "${_cluster_canonical}/..")"
 	_CONFDIR="$(basename "$_cluster_canonical")"
-	_PSR="$(${g}readlink -m ${_cluster_canonical}/..)"
+	_PSR="$(${g}readlink -m "${_cluster_canonical}/..")"
 	if [[ "$_CONFDIR" == "/" ]]; then
 		echo "WARN: Confdir ($_CONFDIR) must not contain slashes! Changing to (.)" >&2
 		_CONFDIR="."
@@ -45,7 +46,6 @@ function parse_cluster_directory {
 
 function collect_shards {
 # $1 = path to cluster
-	set -x
 	local _shard
 	while IFS= read -r -d $'\n' _shard; do
 		echo "Found shard: $_shard"
@@ -56,7 +56,6 @@ function collect_shards {
 	_MASTERSHARD="$(find "$1" -type f -name server.ini -exec grep -qE "^[[:space:]]*is_master[[:space:]]*\=[[:space:]]*true[[:space:]]*" {} \; -print | sed -E 's|.*/([^/]+)/[^/]+$|\1|')"
 	_MASTERSHARD="${_MASTERSHARD##*/}"
 	echo "Detected master shard: $_MASTERSHARD"
-	set +x
 	[ -n "$_MASTERSHARD" ] || { \
 		echo "ERROR: Master shard not found!" >&2 ; kill -s TERM $_top_pid; }
 }
@@ -83,8 +82,9 @@ function start_cluster {
 	# check if we should be using shards
 	collect_shards "$1"
 	echo "Starting master shard: $_MASTERSHARD"
+	set -x
 	(
-		cd "${_DSROOT}/bin"
+		cd "${_DSROOT}/bin" || cd "${_DSROOT}/dontstarve_dedicated_server_nullrenderer.app/Contents/MacOS" || cd "${_DSROOT}/Contents/MacOS"
 		screen -dm -S "$_CLUSTER" -p + -t "$_MASTERSHARD" ./$_DSBIN $_DSARGS -persistent_storage_root $_PSR -conf_dir "$_CONFDIR" -cluster "$_CLUSTER" -shard "$_MASTERSHARD"
 		sleep 4
 	)
@@ -97,6 +97,7 @@ function start_cluster {
 			)
 		fi
 	done
+	set +x
 }
 
 function stop_cluster {
@@ -111,7 +112,7 @@ function stop_cluster {
 	while IFS= read -r -d '' _window; do
 		echo "Found screen window: $_window"
 		_swindows+=("$_window")
-	done < <( ( screen -S "$1" -Q windows; echo -ne "\0" ) | sed 's/  /\x0/g'  | sed -z "s/^[[:digit:]]\+ //")
+	done < <( ( screen -S "$1" -Q windows; echo -ne "\0" ) | sed "s/  /"$'\n'"/g"  | sed "s/^[[:digit:]]\+ //")
 	local _skip="yes"
 	local _timeout=${3:-"90"}
 	for ((i=0;i<${#_swindows[@]};i++)); do
