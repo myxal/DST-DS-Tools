@@ -45,16 +45,18 @@ function parse_cluster_directory {
 
 function collect_shards {
 # $1 = path to cluster
+	set -x
 	local _shard
-	while IFS= read -r -d '' _shard; do
+	while IFS= read -r -d $'\n' _shard; do
 		echo "Found shard: $_shard"
 		_SHARDS+=( "$_shard" )
-	done < <(find "$1" -type f -name server.ini -printf "%h\0" | xargs -0 basename -az)
+	done < <(find "$1" -type f -name server.ini -print | sed -E 's|.*/([^/]+)/[^/]+$|\1|')
 	[ ${#_SHARDS[@]} -gt 0 ] || { \
 		echo "ERROR: No shards found." >&2; kill -s TERM $_top_pid; }
-	_MASTERSHARD="$(find "$1" -type f -name server.ini -exec grep -qE "^[[:space:]]*is_master[[:space:]]*\=[[:space:]]*true[[:space:]]*" {} \; -printf %h)"
+	_MASTERSHARD="$(find "$1" -type f -name server.ini -exec grep -qE "^[[:space:]]*is_master[[:space:]]*\=[[:space:]]*true[[:space:]]*" {} \; -print | sed -E 's|.*/([^/]+)/[^/]+$|\1|')"
 	_MASTERSHARD="${_MASTERSHARD##*/}"
 	echo "Detected master shard: $_MASTERSHARD"
+	set +x
 	[ -n "$_MASTERSHARD" ] || { \
 		echo "ERROR: Master shard not found!" >&2 ; kill -s TERM $_top_pid; }
 }
