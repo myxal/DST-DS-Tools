@@ -18,7 +18,7 @@ _STEAMUPDARGS="validate"
 _DSROOT=${_DSROOT:="/home/dontstarve/DST"}
 _DSBIN="dontstarve_dedicated_server_nullrenderer"
 #_DSARGS="-console" # this arg is deprecated, console is configured in cluster.ini
-_DSARGS=${_DSARGS="-skip_update_server_mods -tick_rate 20"}
+_DSARGS=${_DSARGS="-skip_update_server_mods"}
 unset _PSR
 unset _CONFDIR
 unset _CLUSTER
@@ -112,7 +112,7 @@ function stop_cluster {
 	while IFS= read -r -d '' _window; do
 		echo "Found screen window: $_window"
 		_swindows+=("$_window")
-	done < <( ( screen -S "$1" -Q windows; echo -ne "\0" ) | sed "s/  /"$'\n'"/g"  | sed "s/^[[:digit:]]\+ //")
+	done < <( ( screen -S "$1" -Q windows; echo -ne "\0" ) | sed -E "s/  /"$'\n'"/g"  | sed -E "s/^[[:digit:]]\+ //")
 	local _skip="yes"
 	local _timeout=${3:-"90"}
 	for ((i=0;i<${#_swindows[@]};i++)); do
