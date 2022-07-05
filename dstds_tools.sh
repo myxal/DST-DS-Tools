@@ -18,7 +18,7 @@ _STEAMUPDARGS="validate"
 _DSROOT=${_DSROOT:="/home/dontstarve/DST"}
 _DSBIN="dontstarve_dedicated_server_nullrenderer"
 #_DSARGS="-console" # this arg is deprecated, console is configured in cluster.ini
-_DSARGS=${_DSARGS="-skip_update_server_mods"}
+_DSARGS=${_DSARGS="-skip_update_server_mods -ugc_directory ../mods_ugc"}
 unset _PSR
 unset _CONFDIR
 unset _CLUSTER
